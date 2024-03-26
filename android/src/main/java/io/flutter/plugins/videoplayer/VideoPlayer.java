@@ -83,7 +83,7 @@ final class VideoPlayer {
     DefaultLoadControl.Builder loadBuilder = new DefaultLoadControl.Builder();
     loadBuilder.setBufferDurationsMs(
         1000, // min buffer size in ms
-        6553600, // max buffer size in ms - default value from better_player
+        60000, // max buffer size in ms - default value from better_player
         1000, // buffer for playback in ms
         1000); // buffer for playback after rebuffer
     LoadControl loadControl = loadBuilder.build();
