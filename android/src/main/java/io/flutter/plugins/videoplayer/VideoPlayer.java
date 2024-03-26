@@ -7,19 +7,23 @@ package io.flutter.plugins.videoplayer;
 import static com.google.android.exoplayer2.Player.REPEAT_MODE_ALL;
 import static com.google.android.exoplayer2.Player.REPEAT_MODE_OFF;
 
-import android.content.Context;
-import android.net.Uri;
-import android.view.Surface;
-import androidx.annotation.NonNull;
-import androidx.annotation.VisibleForTesting;
+import java.net.http.WebSocket.Listener;
+import java.text.Format;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+import javax.naming.Context;
+import javax.sql.DataSource;
+
 import com.google.android.exoplayer2.C;
 import com.google.android.exoplayer2.ExoPlayer;
-import com.google.android.exoplayer2.Format;
 import com.google.android.exoplayer2.MediaItem;
 import com.google.android.exoplayer2.PlaybackException;
 import com.google.android.exoplayer2.PlaybackParameters;
 import com.google.android.exoplayer2.Player;
-import com.google.android.exoplayer2.Player.Listener;
 import com.google.android.exoplayer2.audio.AudioAttributes;
 import com.google.android.exoplayer2.source.MediaSource;
 import com.google.android.exoplayer2.source.ProgressiveMediaSource;
@@ -28,17 +32,16 @@ import com.google.android.exoplayer2.source.dash.DefaultDashChunkSource;
 import com.google.android.exoplayer2.source.hls.HlsMediaSource;
 import com.google.android.exoplayer2.source.smoothstreaming.DefaultSsChunkSource;
 import com.google.android.exoplayer2.source.smoothstreaming.SsMediaSource;
-import com.google.android.exoplayer2.upstream.DataSource;
 import com.google.android.exoplayer2.upstream.DefaultDataSource;
 import com.google.android.exoplayer2.upstream.DefaultHttpDataSource;
 import com.google.android.exoplayer2.util.Util;
+
+import android.net.Uri;
+import android.view.Surface;
+import androidx.annotation.NonNull;
+import androidx.annotation.VisibleForTesting;
 import io.flutter.plugin.common.EventChannel;
 import io.flutter.view.TextureRegistry;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
 
 final class VideoPlayer {
   private static final String FORMAT_SS = "ss";
@@ -58,7 +61,8 @@ final class VideoPlayer {
 
   private static final String USER_AGENT = "User-Agent";
 
-  @VisibleForTesting boolean isInitialized = false;
+  @VisibleForTesting
+  boolean isInitialized = false;
 
   private final VideoPlayerOptions options;
 
@@ -76,12 +80,19 @@ final class VideoPlayer {
     this.textureEntry = textureEntry;
     this.options = options;
 
-    ExoPlayer exoPlayer = new ExoPlayer.Builder(context).build();
+    DefaultLoadControl.Builder loadBuilder = new DefaultLoadControl.Builder();
+    loadBuilder.setBufferDurationsMs(
+        1000, // min buffer size in ms
+        6553600, // max buffer size in ms - default value from better_player
+        1000, // buffer for playback in ms
+        1000); // buffer for playback after rebuffer
+    LoadControl loadControl = loadBuilder.build();
+
+    ExoPlayer exoPlayer = new ExoPlayer.Builder(context).setLoadControl(loadControl).build();
     Uri uri = Uri.parse(dataSource);
 
     buildHttpDataSourceFactory(httpHeaders);
-    DataSource.Factory dataSourceFactory =
-        new DefaultDataSource.Factory(context, httpDataSourceFactory);
+    DataSource.Factory dataSourceFactory = new DefaultDataSource.Factory(context, httpDataSourceFactory);
 
     MediaSource mediaSource = buildMediaSource(uri, dataSourceFactory, formatHint);
 
@@ -111,10 +122,9 @@ final class VideoPlayer {
   @VisibleForTesting
   public void buildHttpDataSourceFactory(@NonNull Map<String, String> httpHeaders) {
     final boolean httpHeadersNotEmpty = !httpHeaders.isEmpty();
-    final String userAgent =
-        httpHeadersNotEmpty && httpHeaders.containsKey(USER_AGENT)
-            ? httpHeaders.get(USER_AGENT)
-            : "ExoPlayer";
+    final String userAgent = httpHeadersNotEmpty && httpHeaders.containsKey(USER_AGENT)
+        ? httpHeaders.get(USER_AGENT)
+        : "ExoPlayer";
 
     httpDataSourceFactory.setUserAgent(userAgent).setAllowCrossProtocolRedirects(true);
 
@@ -150,11 +160,11 @@ final class VideoPlayer {
     switch (type) {
       case C.CONTENT_TYPE_SS:
         return new SsMediaSource.Factory(
-                new DefaultSsChunkSource.Factory(mediaDataSourceFactory), mediaDataSourceFactory)
+            new DefaultSsChunkSource.Factory(mediaDataSourceFactory), mediaDataSourceFactory)
             .createMediaSource(MediaItem.fromUri(uri));
       case C.CONTENT_TYPE_DASH:
         return new DashMediaSource.Factory(
-                new DefaultDashChunkSource.Factory(mediaDataSourceFactory), mediaDataSourceFactory)
+            new DefaultDashChunkSource.Factory(mediaDataSourceFactory), mediaDataSourceFactory)
             .createMediaSource(MediaItem.fromUri(uri));
       case C.CONTENT_TYPE_HLS:
         return new HlsMediaSource.Factory(mediaDataSourceFactory)
@@ -162,10 +172,9 @@ final class VideoPlayer {
       case C.CONTENT_TYPE_OTHER:
         return new ProgressiveMediaSource.Factory(mediaDataSourceFactory)
             .createMediaSource(MediaItem.fromUri(uri));
-      default:
-        {
-          throw new IllegalStateException("Unsupported type: " + type);
-        }
+      default: {
+        throw new IllegalStateException("Unsupported type: " + type);
+      }
     }
   }
 
@@ -228,7 +237,8 @@ final class VideoPlayer {
           public void onPlayerError(@NonNull final PlaybackException error) {
             setBuffering(false);
             if (error.errorCode == PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW) {
-              // See https://exoplayer.dev/live-streaming.html#behindlivewindowexception-and-error_code_behind_live_window
+              // See
+              // https://exoplayer.dev/live-streaming.html#behindlivewindowexception-and-error_code_behind_live_window
               exoPlayer.seekToDefaultPosition();
               exoPlayer.prepare();
             } else if (eventSink != null) {
@@ -252,7 +262,8 @@ final class VideoPlayer {
     Map<String, Object> event = new HashMap<>();
     event.put("event", "bufferingUpdate");
     List<? extends Number> range = Arrays.asList(0, exoPlayer.getBufferedPosition());
-    // iOS supports a list of buffered ranges, so here is a list with a single range.
+    // iOS supports a list of buffered ranges, so here is a list with a single
+    // range.
     event.put("values", Collections.singletonList(range));
     eventSink.success(event);
   }
@@ -281,7 +292,8 @@ final class VideoPlayer {
   }
 
   void setPlaybackSpeed(double value) {
-    // We do not need to consider pitch and skipSilence for now as we do not handle them and
+    // We do not need to consider pitch and skipSilence for now as we do not handle
+    // them and
     // therefore never diverge from the default values.
     final PlaybackParameters playbackParameters = new PlaybackParameters(((float) value));
 
@@ -317,9 +329,11 @@ final class VideoPlayer {
         event.put("width", width);
         event.put("height", height);
 
-        // Rotating the video with ExoPlayer does not seem to be possible with a Surface,
+        // Rotating the video with ExoPlayer does not seem to be possible with a
+        // Surface,
         // so inform the Flutter code that the widget needs to be rotated to prevent
-        // upside-down playback for videos with rotationDegrees of 180 (other orientations work
+        // upside-down playback for videos with rotationDegrees of 180 (other
+        // orientations work
         // correctly without correction).
         if (rotationDegrees == 180) {
           event.put("rotationCorrection", rotationDegrees);
